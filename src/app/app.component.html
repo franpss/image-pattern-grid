@@ -73,18 +73,6 @@
       <button class="generate" (click)="generatePattern()" [disabled]="!sourceImage || isProcessing">
         {{ isProcessing ? 'Procesando...' : 'Generar patron' }}
       </button>
-
-      <button class="secondary" *ngIf="grid.length > 0" (click)="toggleEditMode()">
-        {{ editMode ? 'Desactivar modo edicion' : 'Activar modo edicion' }}
-      </button>
-
-      <button class="secondary" *ngIf="grid.length > 0" (click)="downloadPattern()">
-        Descargar PNG
-      </button>
-
-      <button class="secondary" *ngIf="palette.length > 0" (click)="downloadPaletteImage()">
-        Descargar paleta PNG
-      </button>
     </div>
 
     <div class="stats" *ngIf="patternWidth && patternHeight">
@@ -93,16 +81,18 @@
       <p>Colores usados: {{ palette.length }}</p>
     </div>
 
-    <p class="edit-hint" *ngIf="editMode">
-      Modo edicion activo: puedes reemplazar o quitar colores y el patron se actualiza automaticamente.
-    </p>
-
     <img *ngIf="sourcePreview" [src]="sourcePreview" alt="Vista previa" class="source-preview" />
   </section>
 
-  <section class="panel preview" *ngIf="grid.length > 0; else emptyState">
+  <section class="panel preview" *ngIf="grid.length > 0; else emptyState" #patternPanel>
     <div class="canvas-wrapper">
       <canvas #patternCanvas></canvas>
+    </div>
+
+    <div class="panel-actions">
+      <button class="secondary" (click)="downloadPattern()">
+        Descargar PNG
+      </button>
     </div>
   </section>
 
@@ -121,9 +111,19 @@
         <span class="index">{{ i + 1 }}</span>
         <span class="symbol">{{ color.symbol }}</span>
         <span class="hex">{{ color.hex }}</span>
+        <button
+          type="button"
+          class="icon-btn edit-trigger"
+          [class.active]="isColorEditorOpen(i)"
+          (click)="toggleColorEditor(i)"
+          [attr.aria-label]="isColorEditorOpen(i) ? 'Cerrar editor de color' : 'Editar color'"
+          title="Editar color"
+        >
+          &#9998;
+        </button>
         <span class="count">{{ color.count }} celdas</span>
 
-        <div class="palette-actions" *ngIf="editMode && palette.length > 1">
+        <div class="palette-actions" *ngIf="isColorEditorOpen(i)">
           <input type="color" [(ngModel)]="colorDrafts[i]" />
           <input
             type="text"
@@ -133,10 +133,16 @@
             placeholder="#RRGGBB"
           />
           <button type="button" class="small-btn" (click)="applyHexColor(i)">Aplicar HEX</button>
-          <button type="button" class="small-btn danger" (click)="removeColor(i)">Quitar</button>
+          <button type="button" class="small-btn danger" *ngIf="palette.length > 1" (click)="removeColor(i)">Quitar</button>
         </div>
       </li>
     </ul>
+
+    <div class="panel-actions">
+      <button class="secondary" (click)="downloadPaletteImage()">
+        Descargar paleta PNG
+      </button>
+    </div>
   </aside>
 </main>
 
@@ -192,7 +198,7 @@
       <button type="button" class="secondary" (click)="cancelCrop()">Cancelar</button>
       <button type="button" class="secondary" (click)="autoCropFlatBackground()">Recorte automatico</button>
       <button type="button" class="secondary" (click)="useFullImage()">Usar imagen completa</button>
-      <button type="button" class="generate" (click)="applyCrop()">Aplicar recorte</button>
+      <button type="button" class="generate" (click)="applyCropAndGenerate()">Aplicar recorte</button>
     </footer>
   </section>
 </div>

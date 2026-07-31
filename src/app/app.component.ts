@@ -24,6 +24,8 @@ type PaletteEntry = Rgb & {
 export class AppComponent implements OnInit {
   @ViewChild('patternCanvas')
   patternCanvas?: ElementRef<HTMLCanvasElement>;
+  @ViewChild('patternPanel')
+  patternPanel?: ElementRef<HTMLElement>;
   @ViewChild('cropCanvas')
   cropCanvas?: ElementRef<HTMLCanvasElement>;
 
@@ -33,15 +35,15 @@ export class AppComponent implements OnInit {
   sourceImage: HTMLImageElement | null = null;
   isProcessing = false;
 
-  stitchColumns = 64;
-  maxColors = 16;
-  stitchSize = 12;
+  stitchColumns =25;
+  maxColors = 6;
+  stitchSize = 30;
   showSymbols = true;
   showGuideGrid = false;
   guideDensity = 10;
   rowGuideLabelMode: 'numbers' | 'letters' = 'numbers';
   colGuideLabelMode: 'numbers' | 'letters' = 'numbers';
-  editMode = false;
+  editingColorIndex: number | null = null;
   showCropModalOnLoad = true;
   isCropModalOpen = false;
 
@@ -302,13 +304,17 @@ export class AppComponent implements OnInit {
     this.applyCrop();
   }
 
+  applyCropAndGenerate(): void {
+    this.applyCrop(true);
+  }
+
   cancelCrop(): void {
     this.isCropModalOpen = false;
     this.pendingSourceImage = null;
     this.pendingImageName = '';
   }
 
-  applyCrop(): void {
+  applyCrop(shouldGenerate = true): void {
     if (!this.pendingSourceImage) {
       return;
     }
@@ -378,12 +384,12 @@ export class AppComponent implements OnInit {
 
       const composedDataUrl = composedCanvas.toDataURL('image/png');
       const foregroundDataUrl = foregroundCanvas.toDataURL('image/png');
-      this.finalizeCroppedImage(foregroundDataUrl, composedDataUrl, this.textureImage);
+      this.finalizeCroppedImage(foregroundDataUrl, composedDataUrl, this.textureImage, shouldGenerate, foregroundCanvas);
       return;
     }
 
     const croppedDataUrl = output.toDataURL('image/png');
-    this.finalizeCroppedImage(croppedDataUrl, croppedDataUrl, null);
+    this.finalizeCroppedImage(croppedDataUrl, croppedDataUrl, null, shouldGenerate, output);
   }
 
   generatePattern(): void {
@@ -391,10 +397,15 @@ export class AppComponent implements OnInit {
       return;
     }
 
+    this.generatePatternFromSource(this.sourceImage);
+  }
+
+  private generatePatternFromSource(source: CanvasImageSource & { width: number; height: number }): void {
+
     this.isProcessing = true;
 
     const cols = this.clamp(Math.round(this.stitchColumns), 16, 220);
-    const ratio = this.sourceImage.height / this.sourceImage.width;
+    const ratio = source.height / source.width;
     const rows = Math.max(1, Math.round(cols * ratio));
 
     this.patternWidth = cols;
@@ -411,29 +422,49 @@ export class AppComponent implements OnInit {
     }
 
     sampleCtx.imageSmoothingEnabled = true;
-    sampleCtx.drawImage(this.sourceImage, 0, 0, cols, rows);
+    sampleCtx.drawImage(source, 0, 0, cols, rows);
     const imageData = sampleCtx.getImageData(0, 0, cols, rows).data;
 
     const quantized = this.quantize(imageData, cols, rows, this.clamp(this.maxColors, 2, 48));
     this.grid = quantized.grid;
     this.palette = quantized.palette;
     this.stitchCount = this.countStitchesInGrid();
-    this.editMode = false;
+    this.editingColorIndex = null;
     this.syncColorDrafts();
 
-    this.renderPatternCanvas();
     this.isProcessing = false;
-  }
 
-  toggleEditMode(): void {
-    if (this.grid.length === 0 || this.palette.length === 0) {
+    if (this.patternCanvas?.nativeElement) {
+      this.renderPatternCanvas();
+      this.scrollToPattern();
       return;
     }
 
-    this.editMode = !this.editMode;
-    if (this.editMode) {
-      this.syncColorDrafts();
+    requestAnimationFrame(() => {
+      this.renderPatternCanvas();
+      this.scrollToPattern();
+    });
+  }
+
+  private scrollToPattern(): void {
+    setTimeout(() => {
+      this.patternPanel?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  }
+
+  toggleColorEditor(index: number): void {
+    if (!this.isValidPaletteIndex(index)) {
+      return;
     }
+
+    this.editingColorIndex = this.editingColorIndex === index ? null : index;
+    if (this.editingColorIndex !== null) {
+      this.colorDrafts[index] = this.palette[index].hex;
+    }
+  }
+
+  isColorEditorOpen(index: number): boolean {
+    return this.editingColorIndex === index;
   }
 
   applyHexColor(index: number): void {
@@ -475,6 +506,7 @@ export class AppComponent implements OnInit {
 
     this.remapGridColor(sourceIndex, targetIndex);
     this.rebuildPaletteFromGrid();
+    this.editingColorIndex = null;
     this.renderPatternCanvas();
   }
 
@@ -861,8 +893,8 @@ export class AppComponent implements OnInit {
 
     this.palette = nextPalette;
     this.stitchCount = this.countStitchesInGrid();
-    if (this.palette.length <= 1) {
-      this.editMode = false;
+    if (this.editingColorIndex !== null && this.editingColorIndex >= this.palette.length) {
+      this.editingColorIndex = null;
     }
 
     this.syncColorDrafts();
@@ -1247,20 +1279,38 @@ export class AppComponent implements OnInit {
   private finalizeCroppedImage(
     processingDataUrl: string,
     previewDataUrl: string,
-    textureBackground: HTMLImageElement | null
+    textureBackground: HTMLImageElement | null,
+    shouldGenerate: boolean,
+    processingCanvas: HTMLCanvasElement
   ): void {
+    this.sourcePreview = previewDataUrl;
+    this.activeTextureBackground = textureBackground;
+    this.imageName = this.pendingImageName;
+    this.isCropModalOpen = false;
+    this.pendingSourceImage = null;
+    this.pendingImageName = '';
+
+    if (shouldGenerate) {
+      this.generatePatternFromSource(processingCanvas);
+    }
+
     const croppedImage = new Image();
-    croppedImage.onload = () => {
-      this.sourcePreview = previewDataUrl;
+    let sourceAssigned = false;
+    const assignSourceImage = () => {
+      if (sourceAssigned) {
+        return;
+      }
+      sourceAssigned = true;
       this.sourceImage = croppedImage;
-      this.activeTextureBackground = textureBackground;
-      this.imageName = this.pendingImageName;
-      this.isCropModalOpen = false;
-      this.pendingSourceImage = null;
-      this.pendingImageName = '';
-      this.generatePattern();
     };
+
+    croppedImage.onload = assignSourceImage;
     croppedImage.src = processingDataUrl;
+
+    // Fallback for browsers with inconsistent onload behavior for data URLs.
+    if (croppedImage.complete && croppedImage.naturalWidth > 0) {
+      assignSourceImage();
+    }
   }
 
   private detectLikelyLightBackground(image: HTMLImageElement): boolean {
