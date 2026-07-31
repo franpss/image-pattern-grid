@@ -1,0 +1,198 @@
+<main class="layout">
+  <section class="panel controls">
+    <h1>Patron para Punto Cruz / Pixel Art</h1>
+    <p class="subtitle">
+      Sube una imagen, limita los colores y genera una cuadricula para bordado.
+    </p>
+
+    <label class="toggle crop-preference">
+      <input type="checkbox" [(ngModel)]="showCropModalOnLoad" (change)="onCropPreferenceToggle()" />
+      <span>Mostrar modal de recorte al cargar imagen</span>
+    </label>
+
+    <label class="field file-input">
+      <span>Imagen de entrada</span>
+      <input type="file" accept="image/*" (change)="onFileSelected($event)" />
+    </label>
+
+    <p class="filename" *ngIf="imageName">Archivo: {{ imageName }}</p>
+
+    <label class="field">
+      <span>Densidad horizontal (columnas): {{ stitchColumns }}</span>
+      <input type="number" min="16" max="220" step="1" [(ngModel)]="stitchColumns" />
+    </label>
+
+    <label class="field">
+      <span>Maximo de colores: {{ maxColors }}</span>
+      <input type="number" min="2" max="48" step="1" [(ngModel)]="maxColors" />
+    </label>
+
+    <label class="field">
+      <span>Tamano de celda: {{ stitchSize }} px</span>
+      <input type="number" min="6" max="32" step="1" [(ngModel)]="stitchSize" />
+    </label>
+
+    <label class="toggle">
+      <input type="checkbox" [(ngModel)]="showSymbols" />
+      <span>Mostrar simbolos en cada celda</span>
+    </label>
+
+    <section class="guide-panel" *ngIf="grid.length > 0">
+      <h3>Grilla Guia</h3>
+
+      <label class="toggle">
+        <input type="checkbox" [(ngModel)]="showGuideGrid" (change)="onGuideSettingsChange()" />
+        <span>Activar grilla de referencia</span>
+      </label>
+
+      <div *ngIf="showGuideGrid" class="guide-controls">
+        <label class="field">
+          <span>Densidad de guia (cada N celdas): {{ guideDensity }}</span>
+          <input type="number" min="2" max="80" step="1" [(ngModel)]="guideDensity" (ngModelChange)="onGuideSettingsChange()" />
+        </label>
+
+        <label class="field">
+          <span>Etiquetas de columnas</span>
+          <select [(ngModel)]="colGuideLabelMode" (ngModelChange)="onGuideSettingsChange()">
+            <option value="numbers">Numeros</option>
+            <option value="letters">Letras</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Etiquetas de filas</span>
+          <select [(ngModel)]="rowGuideLabelMode" (ngModelChange)="onGuideSettingsChange()">
+            <option value="numbers">Numeros</option>
+            <option value="letters">Letras</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button class="generate" (click)="generatePattern()" [disabled]="!sourceImage || isProcessing">
+        {{ isProcessing ? 'Procesando...' : 'Generar patron' }}
+      </button>
+
+      <button class="secondary" *ngIf="grid.length > 0" (click)="toggleEditMode()">
+        {{ editMode ? 'Desactivar modo edicion' : 'Activar modo edicion' }}
+      </button>
+
+      <button class="secondary" *ngIf="grid.length > 0" (click)="downloadPattern()">
+        Descargar PNG
+      </button>
+
+      <button class="secondary" *ngIf="palette.length > 0" (click)="downloadPaletteImage()">
+        Descargar paleta PNG
+      </button>
+    </div>
+
+    <div class="stats" *ngIf="patternWidth && patternHeight">
+      <p>Cuadricula: {{ patternWidth }} x {{ patternHeight }}</p>
+      <p>Puntadas: {{ totalStitches() }}</p>
+      <p>Colores usados: {{ palette.length }}</p>
+    </div>
+
+    <p class="edit-hint" *ngIf="editMode">
+      Modo edicion activo: puedes reemplazar o quitar colores y el patron se actualiza automaticamente.
+    </p>
+
+    <img *ngIf="sourcePreview" [src]="sourcePreview" alt="Vista previa" class="source-preview" />
+  </section>
+
+  <section class="panel preview" *ngIf="grid.length > 0; else emptyState">
+    <div class="canvas-wrapper">
+      <canvas #patternCanvas></canvas>
+    </div>
+  </section>
+
+  <ng-template #emptyState>
+    <section class="panel preview empty">
+      <p>Sube una imagen para crear tu patron.</p>
+    </section>
+  </ng-template>
+
+  <aside class="panel palette" *ngIf="palette.length > 0">
+    <h2>Paleta de hilos</h2>
+    <p class="subtitle">Lista reducida para evitar cientos de colores.</p>
+    <ul>
+      <li *ngFor="let color of palette; let i = index">
+        <span class="swatch" [style.background]="color.hex"></span>
+        <span class="index">{{ i + 1 }}</span>
+        <span class="symbol">{{ color.symbol }}</span>
+        <span class="hex">{{ color.hex }}</span>
+        <span class="count">{{ color.count }} celdas</span>
+
+        <div class="palette-actions" *ngIf="editMode && palette.length > 1">
+          <input type="color" [(ngModel)]="colorDrafts[i]" />
+          <input
+            type="text"
+            class="hex-input"
+            maxlength="7"
+            [(ngModel)]="colorDrafts[i]"
+            placeholder="#RRGGBB"
+          />
+          <button type="button" class="small-btn" (click)="applyHexColor(i)">Aplicar HEX</button>
+          <button type="button" class="small-btn danger" (click)="removeColor(i)">Quitar</button>
+        </div>
+      </li>
+    </ul>
+  </aside>
+</main>
+
+<div class="modal-backdrop" *ngIf="isCropModalOpen">
+  <section class="crop-modal" role="dialog" aria-modal="true" aria-label="Recorte de imagen">
+    <header class="crop-header">
+      <h2>Recorta tu imagen</h2>
+      <p>Selecciona el area que quieres convertir en patron.</p>
+    </header>
+
+    <div class="crop-canvas-wrap">
+      <canvas
+        #cropCanvas
+        (pointerdown)="onCropPointerDown($event)"
+        (pointermove)="onCropPointerMove($event)"
+        (pointerup)="onCropPointerUp($event)"
+        (pointerleave)="onCropPointerUp()"
+      ></canvas>
+    </div>
+
+    <p class="crop-values">
+      Recorte actual: izq {{ cropInsets.left }}% | der {{ cropInsets.right }}% | arr {{ cropInsets.top }}% | aba {{ cropInsets.bottom }}%
+    </p>
+
+    <div class="texture-tools">
+      <p class="texture-title">Textura de fondo</p>
+      <p class="texture-note" *ngIf="hasLightBackground; else noBgDetected">
+        Fondo claro detectado. Puedes reemplazarlo por una textura sin convertirla a punto cruz.
+      </p>
+      <ng-template #noBgDetected>
+        <p class="texture-note muted">
+          No se detecto fondo claro dominante en bordes. Aun asi puedes probar recorte automatico.
+        </p>
+      </ng-template>
+
+      <label class="field file-input texture-input" *ngIf="hasLightBackground">
+        <span>Imagen de textura</span>
+        <input type="file" accept="image/*" (change)="onTextureFileSelected($event)" />
+      </label>
+
+      <label class="toggle" *ngIf="hasLightBackground && textureImage">
+        <input type="checkbox" [(ngModel)]="useTextureBackground" (change)="onTextureToggle()" />
+        <span>Usar textura como fondo</span>
+      </label>
+
+      <img *ngIf="texturePreview" [src]="texturePreview" alt="Vista de textura" class="texture-preview" />
+      <button type="button" class="secondary" *ngIf="textureImage" (click)="clearTextureBackground()">
+        Quitar textura
+      </button>
+    </div>
+
+    <footer class="crop-actions">
+      <button type="button" class="secondary" (click)="cancelCrop()">Cancelar</button>
+      <button type="button" class="secondary" (click)="autoCropFlatBackground()">Recorte automatico</button>
+      <button type="button" class="secondary" (click)="useFullImage()">Usar imagen completa</button>
+      <button type="button" class="generate" (click)="applyCrop()">Aplicar recorte</button>
+    </footer>
+  </section>
+</div>
