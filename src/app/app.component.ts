@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, QueryList, ViewChild, ViewChildren } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
 type Rgb = {
@@ -14,6 +14,12 @@ type PaletteEntry = Rgb & {
   symbol: string;
 };
 
+type PatternBuildResult = {
+  grid: number[][];
+  palette: PaletteEntry[];
+  error?: string;
+};
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -21,13 +27,15 @@ type PaletteEntry = Rgb & {
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss'
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, OnDestroy {
   @ViewChild('patternCanvas')
   patternCanvas?: ElementRef<HTMLCanvasElement>;
   @ViewChild('patternPanel')
   patternPanel?: ElementRef<HTMLElement>;
   @ViewChild('cropCanvas')
   cropCanvas?: ElementRef<HTMLCanvasElement>;
+  @ViewChildren('pickerHost')
+  pickerHosts?: QueryList<ElementRef<HTMLElement>>;
 
   title = 'Generador de Patron Punto Cruz';
   imageName = '';
@@ -38,6 +46,8 @@ export class AppComponent implements OnInit {
   stitchColumns =25;
   maxColors = 6;
   stitchSize = 30;
+  preserveOriginalColors = false;
+  generationError = '';
   showSymbols = true;
   showGuideGrid = false;
   guideDensity = 10;
@@ -68,10 +78,17 @@ export class AppComponent implements OnInit {
   palette: PaletteEntry[] = [];
   colorDrafts: string[] = [];
   readonly symbols = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#%&*+=?<>'.split('');
+  private readonly maxExactColors = 128;
+  private pickerInstance: any = null;
+  private pickerIndex: number | null = null;
 
   ngOnInit(): void {
     const cookieValue = this.readCookie(this.cropCookieName);
     this.showCropModalOnLoad = cookieValue === null ? true : cookieValue === '1';
+  }
+
+  ngOnDestroy(): void {
+    this.destroyLibraryColorPicker();
   }
 
   onFileSelected(event: Event): void {
@@ -83,6 +100,7 @@ export class AppComponent implements OnInit {
     }
 
     this.imageName = file.name;
+    this.clearGeneratedOutput();
     const reader = new FileReader();
 
     reader.onload = () => {
@@ -102,7 +120,6 @@ export class AppComponent implements OnInit {
 
         this.activeTextureBackground = null;
         this.sourceImage = image;
-        this.generatePattern();
       };
       image.src = result;
     };
@@ -401,10 +418,12 @@ export class AppComponent implements OnInit {
   }
 
   private generatePatternFromSource(source: CanvasImageSource & { width: number; height: number }): void {
+    this.normalizeGenerationSettings();
+    this.generationError = '';
 
     this.isProcessing = true;
 
-    const cols = this.clamp(Math.round(this.stitchColumns), 16, 220);
+    const cols = this.stitchColumns;
     const ratio = source.height / source.width;
     const rows = Math.max(1, Math.round(cols * ratio));
 
@@ -421,15 +440,32 @@ export class AppComponent implements OnInit {
       return;
     }
 
-    sampleCtx.imageSmoothingEnabled = true;
+    sampleCtx.imageSmoothingEnabled = !this.preserveOriginalColors;
     sampleCtx.drawImage(source, 0, 0, cols, rows);
     const imageData = sampleCtx.getImageData(0, 0, cols, rows).data;
 
-    const quantized = this.quantize(imageData, cols, rows, this.clamp(this.maxColors, 2, 48));
+    const quantized = this.preserveOriginalColors
+      ? this.buildExactPalette(imageData, cols, rows, this.maxExactColors)
+      : this.quantize(imageData, cols, rows, this.maxColors);
+
+    if (quantized.error) {
+      this.isProcessing = false;
+      this.grid = [];
+      this.palette = [];
+      this.stitchCount = 0;
+      this.patternWidth = 0;
+      this.patternHeight = 0;
+      this.editingColorIndex = null;
+      this.colorDrafts = [];
+      this.generationError = quantized.error;
+      return;
+    }
+
     this.grid = quantized.grid;
     this.palette = quantized.palette;
     this.stitchCount = this.countStitchesInGrid();
     this.editingColorIndex = null;
+    this.destroyLibraryColorPicker();
     this.syncColorDrafts();
 
     this.isProcessing = false;
@@ -446,6 +482,28 @@ export class AppComponent implements OnInit {
     });
   }
 
+  private normalizeGenerationSettings(): void {
+    const parsedCols = Number(this.stitchColumns);
+    const parsedColors = Number(this.maxColors);
+    const parsedCell = Number(this.stitchSize);
+
+    this.stitchColumns = this.clamp(Number.isFinite(parsedCols) ? Math.round(parsedCols) : 64, 16, 220);
+    this.maxColors = this.clamp(Number.isFinite(parsedColors) ? Math.round(parsedColors) : 16, 2, 48);
+    this.stitchSize = this.clamp(Number.isFinite(parsedCell) ? Math.round(parsedCell) : 12, 6, 32);
+  }
+
+  private clearGeneratedOutput(): void {
+    this.generationError = '';
+    this.grid = [];
+    this.palette = [];
+    this.patternWidth = 0;
+    this.patternHeight = 0;
+    this.stitchCount = 0;
+    this.editingColorIndex = null;
+    this.colorDrafts = [];
+    this.destroyLibraryColorPicker();
+  }
+
   private scrollToPattern(): void {
     setTimeout(() => {
       this.patternPanel?.nativeElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -457,9 +515,18 @@ export class AppComponent implements OnInit {
       return;
     }
 
-    this.editingColorIndex = this.editingColorIndex === index ? null : index;
+    if (this.editingColorIndex === index) {
+      this.editingColorIndex = null;
+      this.destroyLibraryColorPicker();
+      return;
+    }
+
+    this.editingColorIndex = index;
     if (this.editingColorIndex !== null) {
       this.colorDrafts[index] = this.palette[index].hex;
+      requestAnimationFrame(() => {
+        void this.mountLibraryColorPicker(index);
+      });
     }
   }
 
@@ -507,7 +574,106 @@ export class AppComponent implements OnInit {
     this.remapGridColor(sourceIndex, targetIndex);
     this.rebuildPaletteFromGrid();
     this.editingColorIndex = null;
+    this.destroyLibraryColorPicker();
     this.renderPatternCanvas();
+  }
+
+  private async mountLibraryColorPicker(index: number): Promise<void> {
+    if (!this.isValidPaletteIndex(index) || this.editingColorIndex !== index) {
+      return;
+    }
+
+    const host = this.findPickerHost(index);
+    if (!host) {
+      return;
+    }
+
+    const { default: Pickr } = await import('@simonwep/pickr');
+    if (this.editingColorIndex !== index) {
+      return;
+    }
+
+    if (this.pickerInstance && this.pickerIndex === index) {
+      this.pickerInstance.setColor(this.colorDrafts[index] ?? this.palette[index].hex, true);
+      return;
+    }
+
+    this.destroyLibraryColorPicker();
+
+    const picker = Pickr.create({
+      el: host,
+      useAsButton: true,
+      container: document.body,
+      position: 'bottom-middle',
+      theme: 'nano',
+      default: this.colorDrafts[index] ?? this.palette[index].hex,
+      comparison: false,
+      lockOpacity: true,
+      components: {
+        preview: true,
+        opacity: false,
+        hue: true,
+        interaction: {
+          hex: true,
+          input: true,
+          save: true,
+          cancel: true
+        }
+      }
+    });
+
+    picker.on('change', (color: any) => {
+      const hex = color?.toHEXA?.().toString().toUpperCase();
+      if (!hex || this.editingColorIndex !== index) {
+        return;
+      }
+
+      this.colorDrafts[index] = hex;
+      this.applyHexColor(index);
+    });
+
+    picker.on('save', (color: any) => {
+      const hex = color?.toHEXA?.().toString().toUpperCase();
+      if (!hex || this.editingColorIndex !== index) {
+        return;
+      }
+
+      this.colorDrafts[index] = hex;
+      this.applyHexColor(index);
+      picker.hide();
+    });
+
+    picker.on('cancel', () => {
+      if (!this.isValidPaletteIndex(index)) {
+        return;
+      }
+
+      this.colorDrafts[index] = this.palette[index].hex;
+      picker.hide();
+    });
+
+    this.pickerInstance = picker;
+    this.pickerIndex = index;
+    picker.show();
+  }
+
+  private destroyLibraryColorPicker(): void {
+    if (!this.pickerInstance) {
+      return;
+    }
+
+    this.pickerInstance.destroyAndRemove?.();
+    this.pickerInstance.destroy?.();
+    this.pickerInstance = null;
+    this.pickerIndex = null;
+  }
+
+  private findPickerHost(index: number): HTMLElement | null {
+    const hostRef = this.pickerHosts
+      ?.toArray()
+      .find((ref) => Number(ref.nativeElement.dataset['index']) === index);
+
+    return hostRef?.nativeElement ?? null;
   }
 
   downloadPattern(): void {
@@ -601,7 +767,7 @@ export class AppComponent implements OnInit {
     return this.stitchCount;
   }
 
-  private quantize(raw: Uint8ClampedArray, width: number, height: number, k: number): { grid: number[][]; palette: PaletteEntry[] } {
+  private quantize(raw: Uint8ClampedArray, width: number, height: number, k: number): PatternBuildResult {
     const totalPixels = width * height;
     const pixels: Rgb[] = [];
     const sourceIndexes: number[] = [];
@@ -710,6 +876,61 @@ export class AppComponent implements OnInit {
         row.push(pixelToPalette[index]);
       }
       grid.push(row);
+    }
+
+    return { grid, palette };
+  }
+
+  private buildExactPalette(
+    raw: Uint8ClampedArray,
+    width: number,
+    height: number,
+    maxUniqueColors: number
+  ): PatternBuildResult {
+    const totalPixels = width * height;
+    const colorToIndex = new Map<string, number>();
+    const palette: PaletteEntry[] = [];
+    const grid: number[][] = Array.from({ length: height }, () => Array<number>(width).fill(-1));
+
+    for (let i = 0; i < totalPixels; i += 1) {
+      const base = i * 4;
+      const alphaByte = raw[base + 3];
+      if (alphaByte < 20) {
+        continue;
+      }
+
+      const alpha = alphaByte / 255;
+      const r = Math.round(raw[base] * alpha + 255 * (1 - alpha));
+      const g = Math.round(raw[base + 1] * alpha + 255 * (1 - alpha));
+      const b = Math.round(raw[base + 2] * alpha + 255 * (1 - alpha));
+      const hex = this.toHex({ r, g, b });
+
+      let paletteIndex = colorToIndex.get(hex);
+      if (paletteIndex === undefined) {
+        if (palette.length >= maxUniqueColors) {
+          return {
+            grid: [],
+            palette: [],
+            error: `No se puede generar sin extrapolar: se detectaron mas de ${maxUniqueColors} colores unicos.`
+          };
+        }
+
+        paletteIndex = palette.length;
+        colorToIndex.set(hex, paletteIndex);
+        palette.push({
+          r,
+          g,
+          b,
+          hex,
+          count: 0,
+          symbol: this.symbols[paletteIndex % this.symbols.length]
+        });
+      }
+
+      const y = Math.floor(i / width);
+      const x = i % width;
+      grid[y][x] = paletteIndex;
+      palette[paletteIndex].count += 1;
     }
 
     return { grid, palette };

@@ -24,7 +24,12 @@
 
     <label class="field">
       <span>Maximo de colores: {{ maxColors }}</span>
-      <input type="number" min="2" max="48" step="1" [(ngModel)]="maxColors" />
+      <input type="number" min="2" max="48" step="1" [(ngModel)]="maxColors" [disabled]="preserveOriginalColors" />
+    </label>
+
+    <label class="toggle">
+      <input type="checkbox" [(ngModel)]="preserveOriginalColors" />
+      <span>No extrapolar colores (usar colores exactos)</span>
     </label>
 
     <label class="field">
@@ -75,6 +80,8 @@
       </button>
     </div>
 
+    <p class="error-message" *ngIf="generationError">{{ generationError }}</p>
+
     <div class="stats" *ngIf="patternWidth && patternHeight">
       <p>Cuadricula: {{ patternWidth }} x {{ patternHeight }}</p>
       <p>Puntadas: {{ totalStitches() }}</p>
@@ -124,7 +131,7 @@
         <span class="count">{{ color.count }} celdas</span>
 
         <div class="palette-actions" *ngIf="isColorEditorOpen(i)">
-          <input type="color" [(ngModel)]="colorDrafts[i]" />
+          <div class="picker-anchor" #pickerHost [attr.data-index]="i" aria-hidden="true"></div>
           <input
             type="text"
             class="hex-input"
