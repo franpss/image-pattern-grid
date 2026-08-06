@@ -702,16 +702,21 @@ export class AppComponent implements OnInit, OnDestroy {
     link.click();
   }
 
-  downloadPaletteImage(): void {
-    if (this.palette.length === 0) {
+  downloadPatternWithPalette(): void {
+    const patternCanvas = this.patternCanvas?.nativeElement;
+    if (!patternCanvas || this.grid.length === 0 || this.palette.length === 0) {
       return;
     }
 
-    const rowHeight = 44;
-    const headerHeight = 72;
+    const rowHeight = 34;
+    const headerHeight = 74;
     const footerHeight = 20;
-    const width = 680;
-    const height = headerHeight + this.palette.length * rowHeight + footerHeight;
+    const panelWidth = 360;
+    const gap = 18;
+    const padding = 20;
+    const paletteHeight = headerHeight + this.palette.length * rowHeight + footerHeight;
+    const width = patternCanvas.width + panelWidth + gap + padding * 2;
+    const height = Math.max(patternCanvas.height + padding * 2, paletteHeight + padding * 2);
 
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -722,40 +727,57 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
 
-    ctx.fillStyle = '#fffaf3';
+    ctx.fillStyle = '#fffdf8';
     ctx.fillRect(0, 0, width, height);
 
+    const patternX = padding;
+    const patternY = padding;
+    const panelX = patternX + patternCanvas.width + gap;
+    const panelY = padding;
+
+    ctx.drawImage(patternCanvas, patternX, patternY);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(panelX, panelY, panelWidth, height - padding * 2);
+    ctx.strokeStyle = '#d9c4a8';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelWidth - 1, height - padding * 2 - 1);
+
     ctx.fillStyle = '#3d3025';
-    ctx.font = '700 26px "Trebuchet MS", sans-serif';
-    ctx.fillText('Paleta de Hilos', 24, 40);
+    ctx.font = '700 25px "Trebuchet MS", sans-serif';
+    ctx.fillText('Paleta de Hilos', panelX + 18, panelY + 36);
 
     ctx.font = '14px "Trebuchet MS", sans-serif';
     ctx.fillStyle = '#6a5848';
-    ctx.fillText(`Colores: ${this.palette.length} | Cuadricula: ${this.patternWidth} x ${this.patternHeight}`, 24, 62);
+    ctx.fillText(
+      `Colores: ${this.palette.length} | Cuadricula: ${this.patternWidth} x ${this.patternHeight}`,
+      panelX + 18,
+      panelY + 58
+    );
 
     for (let i = 0; i < this.palette.length; i += 1) {
       const color = this.palette[i];
-      const yTop = headerHeight + i * rowHeight;
+      const yTop = panelY + headerHeight + i * rowHeight;
       const yMid = yTop + rowHeight / 2;
 
       ctx.fillStyle = i % 2 === 0 ? '#fff6ea' : '#fffdf8';
-      ctx.fillRect(16, yTop + 2, width - 32, rowHeight - 4);
+      ctx.fillRect(panelX + 12, yTop + 2, panelWidth - 24, rowHeight - 4);
 
       ctx.fillStyle = color.hex;
-      ctx.fillRect(28, yTop + 10, 28, 24);
+      ctx.fillRect(panelX + 22, yTop + 7, 22, 20);
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
-      ctx.strokeRect(28, yTop + 10, 28, 24);
+      ctx.strokeRect(panelX + 22, yTop + 7, 22, 20);
 
       ctx.fillStyle = '#2d241d';
-      ctx.font = '700 14px "Courier New", monospace';
-      ctx.fillText(String(i + 1).padStart(2, '0'), 70, yMid + 5);
-      ctx.fillText(color.symbol, 112, yMid + 5);
+      ctx.font = '700 13px "Courier New", monospace';
+      ctx.fillText(String(i + 1).padStart(2, '0'), panelX + 54, yMid + 5);
+      ctx.fillText(color.symbol, panelX + 88, yMid + 5);
 
-      ctx.font = '700 14px "Courier New", monospace';
-      ctx.fillText(color.hex, 160, yMid + 5);
+      ctx.font = '700 12px "Courier New", monospace';
+      ctx.fillText(color.hex, panelX + 116, yMid + 5);
 
-      ctx.font = '14px "Trebuchet MS", sans-serif';
-      ctx.fillText(`${color.count} celdas`, 270, yMid + 5);
+      ctx.font = '12px "Trebuchet MS", sans-serif';
+      ctx.fillText(`${color.count} celdas`, panelX + 230, yMid + 5);
     }
 
     const safeBaseName = (this.imageName || 'patron')
@@ -764,9 +786,10 @@ export class AppComponent implements OnInit, OnDestroy {
       .replace(/^-+|-+$/g, '')
       .toLowerCase();
 
+    const stamp = `${this.patternWidth}x${this.patternHeight}_${this.palette.length}colores`;
     const link = document.createElement('a');
     link.href = canvas.toDataURL('image/png');
-    link.download = `${safeBaseName || 'patron'}_paleta-hilos_${this.palette.length}colores.png`;
+    link.download = `${safeBaseName || 'patron'}_${stamp}_con-paleta.png`;
     link.click();
   }
 

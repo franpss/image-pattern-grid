@@ -276,6 +276,9 @@ h2 {
 .preview .panel-actions {
   display: flex;
   justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .preview .panel-actions .secondary {
