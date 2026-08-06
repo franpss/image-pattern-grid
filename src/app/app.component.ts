@@ -36,6 +36,8 @@ export class AppComponent implements OnInit, OnDestroy {
   cropCanvas?: ElementRef<HTMLCanvasElement>;
   @ViewChildren('pickerHost')
   pickerHosts?: QueryList<ElementRef<HTMLElement>>;
+  @ViewChildren('editButton')
+  editButtons?: QueryList<ElementRef<HTMLButtonElement>>;
 
   title = 'Generador de Patron Punto Cruz';
   imageName = '';
@@ -78,7 +80,7 @@ export class AppComponent implements OnInit, OnDestroy {
   palette: PaletteEntry[] = [];
   colorDrafts: string[] = [];
   readonly symbols = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#%&*+=?<>'.split('');
-  private readonly maxExactColors = 128;
+  private readonly maxExactColors = 30;
   private pickerInstance: any = null;
   private pickerIndex: number | null = null;
 
@@ -319,10 +321,6 @@ export class AppComponent implements OnInit, OnDestroy {
   useFullImage(): void {
     this.resetCropInsets();
     this.applyCrop();
-  }
-
-  applyCropAndGenerate(): void {
-    this.applyCrop(true);
   }
 
   cancelCrop(): void {
@@ -595,6 +593,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
     if (this.pickerInstance && this.pickerIndex === index) {
       this.pickerInstance.setColor(this.colorDrafts[index] ?? this.palette[index].hex, true);
+      this.pickerInstance.show();
       return;
     }
 
@@ -662,13 +661,21 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
 
-    this.pickerInstance.destroyAndRemove?.();
+    // Do not remove the trigger element from the DOM; only destroy picker instance.
     this.pickerInstance.destroy?.();
     this.pickerInstance = null;
     this.pickerIndex = null;
   }
 
   private findPickerHost(index: number): HTMLElement | null {
+    const buttonRef = this.editButtons
+      ?.toArray()
+      .find((ref) => Number(ref.nativeElement.dataset['index']) === index);
+
+    if (buttonRef?.nativeElement) {
+      return buttonRef.nativeElement;
+    }
+
     const hostRef = this.pickerHosts
       ?.toArray()
       .find((ref) => Number(ref.nativeElement.dataset['index']) === index);

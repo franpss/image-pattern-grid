@@ -199,6 +199,13 @@ h2 {
   cursor: not-allowed;
 }
 
+.mode-note {
+  margin: -0.25rem 0 0.55rem;
+  font-size: 0.83rem;
+  color: #6f4d33;
+  font-weight: 700;
+}
+
 .error-message {
   margin: 0.65rem 0 0;
   padding: 0.55rem 0.65rem;
@@ -518,6 +525,22 @@ canvas {
   .canvas-wrapper {
     height: 62vh;
   }
+
+  .palette-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .palette-actions .hex-input {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .palette-actions .small-btn,
+  .palette-actions .small-btn.danger {
+    grid-column: 1 / -1;
+    width: 100%;
+    text-align: center;
+  }
 }
 
 @media (max-width: 760px) {
@@ -581,12 +604,19 @@ canvas {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .palette-actions .hex-input {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
   .palette-actions .small-btn {
     grid-column: 1 / -1;
+    width: 100%;
   }
 
   .palette-actions .small-btn.danger {
     grid-column: 1 / -1;
+    width: 100%;
   }
 
   .generate,
