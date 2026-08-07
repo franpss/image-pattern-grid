@@ -138,7 +138,7 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
 
-    this.guideDensity = this.clamp(Math.round(this.guideDensity), 2, 80);
+    this.guideDensity = this.clamp(Math.round(this.guideDensity), 1, 80);
     this.renderPatternCanvas();
   }
 
@@ -1043,7 +1043,7 @@ export class AppComponent implements OnInit, OnDestroy {
     }
 
     if (showGuide) {
-      const step = this.clamp(Math.round(this.guideDensity), 2, 80);
+      const step = this.clamp(Math.round(this.guideDensity), 1, 80);
       const colSegments = this.buildGuideSegments(cols, step);
       const rowSegments = this.buildGuideSegments(rows, step);
 

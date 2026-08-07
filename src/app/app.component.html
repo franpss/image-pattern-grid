@@ -57,7 +57,7 @@
       <div *ngIf="showGuideGrid" class="guide-controls">
         <label class="field">
           <span>Densidad de guia (cada N celdas): {{ guideDensity }}</span>
-          <input type="number" min="2" max="80" step="1" [(ngModel)]="guideDensity" (ngModelChange)="onGuideSettingsChange()" />
+          <input type="number" min="1" max="80" step="1" [(ngModel)]="guideDensity" (ngModelChange)="onGuideSettingsChange()" />
         </label>
 
         <label class="field">
